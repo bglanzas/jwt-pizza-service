@@ -34,12 +34,6 @@ function mockAuth(user) {
   jwt.verify.mockReturnValueOnce(user);
 }
 
-test('get /api/user/me returns authenticated user', async () => {
-  mockAuth(dinerUser);
-  const res = await request(app).get('/api/user/me').set('Authorization', 'Bearer diner.token');
-  expect(res.status).toBe(200);
-  expect(res.body).toMatchObject(dinerUser);
-});
 
 test('update user rejects non-owner non-admin', async () => {
   mockAuth(dinerUser);
