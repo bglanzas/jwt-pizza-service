@@ -6,6 +6,8 @@ jest.mock('../database/database.js', () => {
     DB: {
       isLoggedIn: jest.fn(),
       updateUser: jest.fn(),
+      listUsers: jest.fn(),
+      deleteUser: jest.fn(),
       loginUser: jest.fn(),
     },
   };
@@ -64,10 +66,11 @@ test('update user returns updated user and token', async () => {
 });
 
 test('delete user returns not implemented message', async () => {
-  mockAuth(adminUser);
-  const res = await request(app).delete('/api/user/2').set('Authorization', 'Bearer admin.token');
-  expect(res.status).toBe(200);
-  expect(res.body.message).toBe('not implemented');
+  mockAuth(dinerUser);
+  const res = await request(app).delete('/api/user/2').set('Authorization', 'Bearer diner.token');
+  expect(res.status).toBe(403);
+  expect(res.body.message).toBe('unauthorized');
+  expect(DB.deleteUser).not.toHaveBeenCalled();
 });
 
 test('list users unauthorized', async () => {
@@ -76,9 +79,31 @@ test('list users unauthorized', async () => {
   expect(res.body.message).toBe('unauthorized');
 });
 
-test('list users returns not implemented payload', async () => {
+test('list users rejects non-admin', async () => {
+  mockAuth(dinerUser);
+  const res = await request(app).get('/api/user').set('Authorization', 'Bearer diner.token');
+  expect(res.status).toBe(403);
+  expect(res.body.message).toBe('unauthorized');
+});
+
+test('list users returns users and more flag', async () => {
+  const users = [
+    { id: 1, name: 'Admin', email: 'a@jwt.com', roles: [{ role: 'admin' }] },
+    { id: 2, name: 'Diner', email: 'd@jwt.com', roles: [{ role: 'diner' }] },
+  ];
+  DB.listUsers.mockResolvedValueOnce([users, true]);
   mockAuth(adminUser);
-  const res = await request(app).get('/api/user').set('Authorization', 'Bearer admin.token');
+
+  const res = await request(app).get('/api/user?page=1&limit=2&name=*').set('Authorization', 'Bearer admin.token');
   expect(res.status).toBe(200);
-  expect(res.body).toEqual({ message: 'not implemented', users: [], more: false });
+  expect(res.body).toEqual({ users, more: true });
+  expect(DB.listUsers).toHaveBeenCalledWith(1, 2, '*');
+});
+
+test('delete user allows admin', async () => {
+  mockAuth(adminUser);
+  const res = await request(app).delete('/api/user/2').set('Authorization', 'Bearer admin.token');
+  expect(res.status).toBe(200);
+  expect(res.body.message).toBe('deleted');
+  expect(DB.deleteUser).toHaveBeenCalledWith(2);
 });
