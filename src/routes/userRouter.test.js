@@ -70,6 +70,12 @@ test('delete user returns not implemented message', async () => {
   expect(res.body.message).toBe('not implemented');
 });
 
+test('list users unauthorized', async () => {
+  const res = await request(app).get('/api/user');
+  expect(res.status).toBe(401);
+  expect(res.body.message).toBe('unauthorized');
+});
+
 test('list users returns not implemented payload', async () => {
   mockAuth(adminUser);
   const res = await request(app).get('/api/user').set('Authorization', 'Bearer admin.token');
