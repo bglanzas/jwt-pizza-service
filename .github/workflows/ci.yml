@@ -1,6 +1,5 @@
 name: CI Pipeline
 
-
 on:
   push:
     branches:
@@ -130,4 +129,4 @@ jobs:
         run: |
           docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY --push .
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >> "$GITHUB_OUTPUT"
-        
+      
