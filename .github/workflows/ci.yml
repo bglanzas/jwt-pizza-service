@@ -73,6 +73,21 @@ jobs:
           color=$(echo "$coverage < 80" | bc | awk '{if ($1) print "red"; else print "green"}')
           curl -s -X POST "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzaservicecoverage?label=Coverage&value=$coverage%25&color=$color" -H "authorization: bearer ${{ secrets.FACTORY_API_KEY }}"
 
+      - name: Env check
+        env:
+          DB_HOSTNAME: ${{ secrets.DB_HOSTNAME }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          echo "ENV CHECK:"
+          echo "DB_HOSTNAME: $DB_HOSTNAME"
+          echo "DB_USERNAME: $DB_USERNAME"
+          if [ -n "$DB_PASSWORD" ]; then
+            echo "DB_PASSWORD exists? true"
+          else
+            echo "DB_PASSWORD exists? false"
+          fi
+
       - name: Create dist
         run: |
           mkdir dist
