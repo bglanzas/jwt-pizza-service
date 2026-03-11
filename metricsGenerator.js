@@ -47,11 +47,11 @@ function sendMetricToGrafana(metricName, metricValue, type, unit) {
   }
 
   const body = JSON.stringify(metric);
-  fetch(`${config.endpointUrl}`, {
+  fetch(`${config.metrics.endpointUrl}`, {
     method: 'POST',
     body: body,
     headers: {
-      Authorization: `Bearer ${config.accountId}:${config.apiKey}`,
+      Authorization: `Bearer ${config.metrics.accountId}:${config.metrics.apiKey}`,
       'Content-Type': 'application/json',
     },
   })
