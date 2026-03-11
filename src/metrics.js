@@ -13,10 +13,10 @@ const RESOURCE_ATTRIBUTES = [
 const SCOPE = { name: source };
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_BATCH = 200;
+const SYSTEM_METRICS_INTERVAL_MS = 10000;
 
 const counters = new Map();
 const pendingMetrics = [];
-const SYSTEM_METRICS_INTERVAL_MS = 10000;
 
 function nowUnixNano() {
   return Date.now() * 1_000_000;
@@ -86,56 +86,6 @@ function enqueueMetric(metric) {
   }
 }
 
-async function flushMetrics() {
-  if (!enabled || pendingMetrics.length === 0) return;
-
-  const batch = pendingMetrics.splice(0, pendingMetrics.length);
-  const payload = {
-    resourceMetrics: [
-      {
-        resource: { attributes: RESOURCE_ATTRIBUTES },
-        scopeMetrics: [
-          {
-            scope: SCOPE,
-            metrics: batch,
-          },
-        ],
-      },
-    ],
-  };
-
-  try {
-    const response = await fetch(metricsConfig.endpointUrl, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-      headers: {
-        Authorization: `Bearer ${metricsConfig.accountId}:${metricsConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`Grafana metrics push failed: ${response.status} ${text}`);
-    }
-  } catch (error) {
-    console.error('Grafana metrics push error:', error);
-  }
-}
-
-if (enabled) {
-  const timer = setInterval(() => {
-    void flushMetrics();
-  }, FLUSH_INTERVAL_MS);
-  timer.unref();
-
-  const systemTimer = setInterval(() => {
-    recordGauge('system_cpu_percent', getCpuUsagePercentage(), {}, '%');
-    recordGauge('system_memory_percent', getMemoryUsagePercentage(), {}, '%');
-  }, SYSTEM_METRICS_INTERVAL_MS);
-  systemTimer.unref();
-}
-
 function incrementCounter(name, delta = 1, attributes = {}, unit = '1') {
   const current = counters.get(name) || 0;
   const next = current + delta;
@@ -159,6 +109,70 @@ function pizzaPurchase(success, latencyMs, price, count = 1) {
   incrementCounter('pizza_purchases_items_total', count, {}, '1');
   incrementCounter('pizza_purchases_revenue_total', price, {}, 'usd');
   recordDuration('pizza_purchase_latency', latencyMs, {});
+}
+
+function buildPayload(batch) {
+  return {
+    resourceMetrics: [
+      {
+        resource: { attributes: RESOURCE_ATTRIBUTES },
+        scopeMetrics: [
+          {
+            scope: SCOPE,
+            metrics: batch,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function sendPayload(payload) {
+  const authToken = Buffer.from(`${metricsConfig.accountId}:${metricsConfig.apiKey}`).toString('base64');
+  const response = await fetch(metricsConfig.endpointUrl, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Basic ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error(`Grafana metrics push failed: ${response.status} ${text}`);
+  }
+}
+
+async function flushMetrics() {
+  if (!enabled || pendingMetrics.length === 0) return;
+  const batch = pendingMetrics.splice(0, pendingMetrics.length);
+
+  try {
+    await sendPayload(buildPayload(batch));
+  } catch (error) {
+    console.error('Grafana metrics push error:', error);
+  }
+}
+
+function startSystemMetrics() {
+  return setInterval(() => {
+    recordGauge('system_cpu_percent', getCpuUsagePercentage(), {}, '%');
+    recordGauge('system_memory_percent', getMemoryUsagePercentage(), {}, '%');
+  }, SYSTEM_METRICS_INTERVAL_MS);
+}
+
+function startFlushTimer() {
+  return setInterval(() => {
+    void flushMetrics();
+  }, FLUSH_INTERVAL_MS);
+}
+
+if (enabled) {
+  const flushTimer = startFlushTimer();
+  flushTimer.unref();
+  const systemTimer = startSystemMetrics();
+  systemTimer.unref();
 }
 
 function createHttpMetricsMiddleware() {
