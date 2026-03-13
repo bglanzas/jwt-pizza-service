@@ -53,7 +53,4 @@ app.use((err, req, res, next) => {
   next();
 });
 
-console.log('ABOUT TO START METRICS');
-metrics.startReporting();
-
 module.exports = app;
