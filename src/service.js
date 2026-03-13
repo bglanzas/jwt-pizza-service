@@ -53,4 +53,6 @@ app.use((err, req, res, next) => {
   next();
 });
 
+metrics.startReporting();
+
 module.exports = app;
