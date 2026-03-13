@@ -4,6 +4,7 @@ const config = require('./config.js');
 const metricsConfig = config.metrics ?? {};
 const enabled = Boolean(metricsConfig.endpointUrl && metricsConfig.accountId && metricsConfig.apiKey);
 
+console.log('METRICS FILE LOADED');
 console.log('METRICS MODULE LOADED');
 console.log('metrics enabled?', enabled);
 console.log('endpoint exists?', !!metricsConfig.endpointUrl);
