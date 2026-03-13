@@ -32,7 +32,18 @@ class MetricsService {
       return;
     }
 
+    if (!this.canSendMetrics()) {
+      console.warn('Metrics reporting disabled: missing Grafana OTLP configuration');
+      return;
+    }
+
     this.started = true;
+    console.info(
+      `Metrics reporting enabled: source=${config.metrics.source || 'jwt-pizza-service'} endpoint=${this.getEndpointHost()} periodMs=${periodMs}`
+    );
+    this.sendMetrics().catch((error) => {
+      console.error('Error sending initial metrics', error);
+    });
     this.timer = setInterval(() => {
       this.sendMetrics().catch((error) => {
         console.error('Error sending metrics', error);
@@ -235,6 +246,14 @@ class MetricsService {
 
   canSendMetrics() {
     return Boolean(config.metrics?.endpointUrl && config.metrics?.accountId && config.metrics?.apiKey);
+  }
+
+  getEndpointHost() {
+    try {
+      return new URL(config.metrics.endpointUrl).host;
+    } catch {
+      return 'invalid-endpoint';
+    }
   }
 
   isTestEnvironment() {
