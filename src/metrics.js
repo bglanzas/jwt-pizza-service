@@ -121,7 +121,7 @@ class MetricsService {
       const response = await fetch(config.metrics.endpointUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Basic ${Buffer.from(`${config.metrics.accountId}:${config.metrics.apiKey}`).toString('base64')}`,
+          Authorization: `Bearer ${config.metrics.accountId}:${config.metrics.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
