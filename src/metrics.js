@@ -1,6 +1,15 @@
 const os = require('os');
 const config = require('./config.js');
 
+const metricsConfig = config.metrics ?? {};
+const enabled = Boolean(metricsConfig.endpointUrl && metricsConfig.accountId && metricsConfig.apiKey);
+
+console.log('METRICS MODULE LOADED');
+console.log('metrics enabled?', enabled);
+console.log('endpoint exists?', !!metricsConfig.endpointUrl);
+console.log('accountId exists?', !!metricsConfig.accountId);
+console.log('apiKey exists?', !!metricsConfig.apiKey);
+
 class MetricsService {
   constructor() {
     this.reportingPeriodMs = 60000;
@@ -100,22 +109,31 @@ class MetricsService {
     }
 
     const payload = this.buildPayload();
-    if (payload.resourceMetrics[0].scopeMetrics[0].metrics.length === 0) {
+    const pendingMetrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
+    if (pendingMetrics.length === 0) {
       return;
     }
 
-    const response = await fetch(config.metrics.endpointUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.metrics.accountId}:${config.metrics.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    console.log('sending metrics batch', pendingMetrics.length);
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`Failed to push metrics data to Grafana: ${text}`);
+    try {
+      const response = await fetch(config.metrics.endpointUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.metrics.accountId}:${config.metrics.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      console.log('grafana response status', response.status);
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error(`Failed to push metrics data to Grafana: ${text}`);
+      }
+    } catch (error) {
+      console.error('grafana export failed', error);
     }
   }
 

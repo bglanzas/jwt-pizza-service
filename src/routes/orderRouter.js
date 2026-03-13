@@ -92,6 +92,8 @@ orderRouter.post(
       ? order.items.reduce((sum, item) => sum + Number(item.price || 0), 0)
       : 0;
 
+    console.log('recording user activity metric');
+
     if (r.ok) {
       metrics.pizzaPurchase(true, durationMs, priceTotal, itemCount);
       res.send({ order, followLinkToEndChaos: j.reportUrl, jwt: j.jwt });
