@@ -118,10 +118,11 @@ class MetricsService {
     console.log('sending metrics batch', pendingMetrics.length);
 
     try {
+      const authToken = Buffer.from(`${config.metrics.accountId}:${config.metrics.apiKey}`).toString('base64');
       const response = await fetch(config.metrics.endpointUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${config.metrics.accountId}:${config.metrics.apiKey}`,
+          Authorization: `Basic ${authToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
