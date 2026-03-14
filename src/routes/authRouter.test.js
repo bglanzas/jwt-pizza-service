@@ -20,8 +20,16 @@ jest.mock('jsonwebtoken', () => {
   };
 });
 
+jest.mock('../metrics.js', () => {
+  return {
+    requestTracker: (req, res, next) => next(),
+    authEvent: jest.fn(),
+  };
+});
+
 const jwt = require('jsonwebtoken');
 const { DB } = require('../database/database.js');
+const metrics = require('../metrics.js');
 const app = require('../service');
 
 const baseUser = { id: 12, name: 'pizza diner', email: 'reg@test.com', roles: [{ role: 'diner' }] };
@@ -56,6 +64,16 @@ test('login returns user and token', async () => {
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.getUser).toHaveBeenCalledWith('reg@test.com', 'a');
   expect(DB.loginUser).toHaveBeenCalledWith(baseUser.id, 'signed.jwt.token');
+  expect(metrics.authEvent).toHaveBeenCalledWith('login', true);
+});
+
+test('login failure records failed auth metric', async () => {
+  DB.getUser.mockRejectedValueOnce(Object.assign(new Error('unknown user'), { statusCode: 404 }));
+  const res = await request(app).put('/api/auth').send({ email: 'reg@test.com', password: 'wrong' });
+
+  expect(res.status).toBe(404);
+  expect(res.body.message).toBe('unknown user');
+  expect(metrics.authEvent).toHaveBeenCalledWith('login', false);
 });
 
 test('logout clears auth token', async () => {
