@@ -60,7 +60,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 12,
+      "id": 14,
       "options": {
         "cellHeight": "sm",
         "showHeader": true
@@ -79,7 +79,7 @@
           "refId": "A"
         }
       ],
-      "title": "Log",
+      "title": "Logs",
       "transformations": [
         {
           "id": "extractFields",
@@ -92,19 +92,29 @@
           "options": {
             "includeByName": {
               "Time": true,
-              "event": true,
-              "level": true,
+              "error_message": true,
               "method": true,
+              "path": true,
+              "requestBody_diner_email": true,
+              "requestBody_diner_name": true,
+              "requestBody_email": true,
+              "responseBody_message": true,
+              "sql": true,
               "statusCode": true,
               "type": true
             },
             "indexByName": {
               "Time": 0,
-              "event": 5,
-              "level": 1,
-              "method": 3,
+              "error_message": 10,
+              "method": 2,
+              "path": 3,
+              "requestBody_diner_email": 8,
+              "requestBody_diner_name": 7,
+              "requestBody_email": 6,
+              "responseBody_message": 9,
+              "sql": 5,
               "statusCode": 4,
-              "type": 2
+              "type": 1
             }
           }
         }
@@ -953,7 +963,7 @@
   "timezone": "browser",
   "title": "Pizza Dashboard",
   "weekStart": "",
-  "version": 46,
+  "version": 49,
   "uid": "ba8xlff",
   "id": 3076767249502208
 }
