@@ -28,8 +28,24 @@ test('createLogEntry sanitizes errors in emitted payloads', () => {
   });
 
   expect(entry.event).toBe('unhandled_exception');
+  expect(entry.type).toBe('unhandled_exception');
   expect(entry.error.message).toBe('failed for [REDACTED_EMAIL]');
   expect(entry.error.stack).toContain('[REDACTED_EMAIL]');
+});
+
+test('createLogEntry promotes name and email to top-level fields', () => {
+  const entry = createLogEntry('http_request', {
+    requestBody: {
+      diner: {
+        name: 'pizza eater',
+        email: 'diner@example.com',
+      },
+    },
+  });
+
+  expect(entry.type).toBe('http_request');
+  expect(entry.name).toBe('pizza eater');
+  expect(entry.email).toBe('[REDACTED_EMAIL]');
 });
 
 test('createAuthorizationHeader uses basic auth for Grafana', () => {

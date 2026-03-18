@@ -99,11 +99,52 @@ function sanitize(value, key, seen = new WeakSet()) {
 }
 
 function createLogEntry(event, payload = {}) {
+  const summaryFields = extractSummaryFields(payload);
+
   return sanitize({
     timestamp: new Date().toISOString(),
     event,
+    type: event,
+    ...summaryFields,
     ...payload,
   });
+}
+
+function extractSummaryFields(payload) {
+  return {
+    name: findFirstValueByKey(payload, 'name'),
+    email: findFirstValueByKey(payload, 'email'),
+  };
+}
+
+function findFirstValueByKey(value, targetKey, seen = new WeakSet()) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'object') {
+    return undefined;
+  }
+
+  if (seen.has(value)) {
+    return undefined;
+  }
+
+  seen.add(value);
+
+  if (!Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, targetKey)) {
+    return value[targetKey];
+  }
+
+  const values = Array.isArray(value) ? value : Object.values(value);
+  for (const entry of values) {
+    const match = findFirstValueByKey(entry, targetKey, seen);
+    if (match !== undefined) {
+      return match;
+    }
+  }
+
+  return undefined;
 }
 
 function createAuthorizationHeader(accountId, apiKey) {
