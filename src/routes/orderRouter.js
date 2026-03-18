@@ -4,6 +4,7 @@ const { Role, DB } = require('../database/database.js');
 const { authRouter } = require('./authRouter.js');
 const { asyncHandler, StatusCodeError } = require('../endpointHelper.js');
 const metrics = require('../metrics.js');
+const logger = require('../logger.js');
 
 const orderRouter = express.Router();
 
@@ -80,19 +81,42 @@ orderRouter.post(
     const start = process.hrtime.bigint();
     const orderReq = req.body;
     const order = await DB.addDinerOrder(req.user, orderReq);
-    const r = await fetch(`${config.factory.url}/api/order`, {
+    const factoryUrl = `${config.factory.url}/api/order`;
+    const factoryRequestBody = { diner: { id: req.user.id, name: req.user.name, email: req.user.email }, order };
+
+    let r;
+    let factoryResponseBody;
+    try {
+      r = await fetch(factoryUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${config.factory.apiKey}` },
+        body: JSON.stringify(factoryRequestBody),
+      });
+      factoryResponseBody = await readResponseBody(r);
+    } catch (error) {
+      logger.logFactoryRequest({
+        method: 'POST',
+        url: factoryUrl,
+        requestBody: factoryRequestBody,
+        error,
+      });
+      throw error;
+    }
+
+    logger.logFactoryRequest({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${config.factory.apiKey}` },
-      body: JSON.stringify({ diner: { id: req.user.id, name: req.user.name, email: req.user.email }, order }),
+      url: factoryUrl,
+      statusCode: r.status,
+      requestBody: factoryRequestBody,
+      responseBody: factoryResponseBody,
     });
-    const j = await r.json();
+
+    const j = isObject(factoryResponseBody) ? factoryResponseBody : {};
     const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
     const itemCount = Array.isArray(order.items) ? order.items.length : 0;
     const priceTotal = Array.isArray(order.items)
       ? order.items.reduce((sum, item) => sum + Number(item.price || 0), 0)
       : 0;
-
-    console.log('recording user activity metric');
 
     if (r.ok) {
       metrics.pizzaPurchase(true, durationMs, priceTotal, itemCount);
@@ -104,5 +128,29 @@ orderRouter.post(
   })
 );
 
+async function readResponseBody(response) {
+  if (typeof response.text === 'function') {
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  }
+
+  if (typeof response.json === 'function') {
+    return response.json();
+  }
+
+  return null;
+}
+
+function isObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
 
 module.exports = orderRouter;

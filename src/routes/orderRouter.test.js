@@ -37,6 +37,18 @@ function mockAuth(user) {
   jwt.verify.mockReturnValueOnce(user);
 }
 
+function findLogEntry(calls, event) {
+  return calls
+    .map(([message]) => {
+      try {
+        return JSON.parse(message);
+      } catch {
+        return null;
+      }
+    })
+    .find((entry) => entry?.event === event);
+}
+
 test('get menu returns menu items', async () => {
   DB.getMenu.mockResolvedValueOnce([{ id: 1, title: 'Veggie' }]);
   const res = await request(app).get('/api/order/menu');
@@ -86,6 +98,7 @@ test('create order returns factory jwt on success', async () => {
   DB.addDinerOrder.mockResolvedValueOnce({ id: 10, franchiseId: 1, storeId: 2, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] });
   global.fetch.mockResolvedValueOnce({
     ok: true,
+    status: 200,
     json: async () => ({ reportUrl: 'https://factory/report', jwt: 'factory.jwt' }),
   });
 
@@ -102,11 +115,41 @@ test('create order returns factory jwt on success', async () => {
   });
 });
 
+test('create order emits sanitized factory log', async () => {
+  const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  mockAuth(dinerUser);
+  DB.addDinerOrder.mockResolvedValueOnce({ id: 10, franchiseId: 1, storeId: 2, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] });
+  global.fetch.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ reportUrl: 'https://factory/report', jwt: 'factory.jwt' }),
+  });
+
+  await request(app)
+    .post('/api/order')
+    .set('Authorization', 'Bearer diner.token')
+    .send({ franchiseId: 1, storeId: 2, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] });
+
+  const logEntry = findLogEntry(consoleLogSpy.mock.calls, 'factory_request');
+  expect(logEntry).toEqual(
+    expect.objectContaining({
+      method: 'POST',
+      url: 'https://pizza-factory.cs329.click/api/order',
+      statusCode: 200,
+    })
+  );
+  expect(logEntry.requestBody.diner.email).toBe('[REDACTED_EMAIL]');
+  expect(logEntry.responseBody.jwt).toBe('[REDACTED]');
+
+  consoleLogSpy.mockRestore();
+});
+
 test('create order returns 500 when factory fails', async () => {
   mockAuth(dinerUser);
   DB.addDinerOrder.mockResolvedValueOnce({ id: 11, franchiseId: 1, storeId: 2, items: [] });
   global.fetch.mockResolvedValueOnce({
     ok: false,
+    status: 500,
     json: async () => ({ reportUrl: 'https://factory/fail' }),
   });
 

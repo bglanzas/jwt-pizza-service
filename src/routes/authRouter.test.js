@@ -34,6 +34,18 @@ const app = require('../service');
 
 const baseUser = { id: 12, name: 'pizza diner', email: 'reg@test.com', roles: [{ role: 'diner' }] };
 
+function findLogEntry(calls, event) {
+  return calls
+    .map(([message]) => {
+      try {
+        return JSON.parse(message);
+      } catch {
+        return null;
+      }
+    })
+    .find((entry) => entry?.event === event);
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -53,6 +65,34 @@ test('register returns user and token', async () => {
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.addUser).toHaveBeenCalled();
   expect(DB.loginUser).toHaveBeenCalledWith(baseUser.id, 'signed.jwt.token');
+});
+
+test('register emits sanitized http request log', async () => {
+  const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  DB.addUser.mockResolvedValueOnce(baseUser);
+
+  await request(app).post('/api/auth').send({ name: 'pizza diner', email: 'reg@test.com', password: 'a' });
+
+  const logEntry = findLogEntry(consoleLogSpy.mock.calls, 'http_request');
+  expect(logEntry).toEqual(
+    expect.objectContaining({
+      method: 'POST',
+      path: '/api/auth',
+      statusCode: 200,
+      hasAuthorizationHeader: false,
+    })
+  );
+  expect(logEntry.requestBody).toEqual({
+    name: 'pizza diner',
+    email: '[REDACTED_EMAIL]',
+    password: '[REDACTED]',
+  });
+  expect(logEntry.responseBody).toEqual({
+    user: { ...baseUser, email: '[REDACTED_EMAIL]' },
+    token: '[REDACTED]',
+  });
+
+  consoleLogSpy.mockRestore();
 });
 
 test('login returns user and token', async () => {

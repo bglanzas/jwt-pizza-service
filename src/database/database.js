@@ -4,6 +4,7 @@ const config = require('../config.js');
 const { StatusCodeError } = require('../endpointHelper.js');
 const { Role } = require('../model/model.js');
 const dbModel = require('./dbModel.js');
+const logger = require('../logger.js');
 class DB {
   constructor() {
     this.initialized = this.initializeDatabase();
@@ -78,22 +79,33 @@ class DB {
   async updateUser(userId, name, email, password) {
     const connection = await this.getConnection();
     try {
-      const params = [];
+      const assignments = [];
+      const values = [];
       if (password) {
         const hashedPassword = await bcrypt.hash(password, 10);
-        params.push(`password='${hashedPassword}'`);
+        assignments.push(`password=?`);
+        values.push(hashedPassword);
       }
       if (email) {
-        params.push(`email='${email}'`);
+        assignments.push(`email=?`);
+        values.push(email);
       }
       if (name) {
-        params.push(`name='${name}'`);
+        assignments.push(`name=?`);
+        values.push(name);
       }
-      if (params.length > 0) {
-        const query = `UPDATE user SET ${params.join(', ')} WHERE id=${userId}`;
-        await this.query(connection, query);
+      if (assignments.length > 0) {
+        values.push(userId);
+        const query = `UPDATE user SET ${assignments.join(', ')} WHERE id=?`;
+        await this.query(connection, query, values);
       }
-      return this.getUser(email, password);
+
+      const userResult = await this.query(connection, `SELECT email FROM user WHERE id=?`, [userId]);
+      if (userResult.length === 0) {
+        throw new StatusCodeError('unknown user', 404);
+      }
+
+      return this.getUser(userResult[0].email, password);
     } finally {
       connection.end();
     }
@@ -355,13 +367,15 @@ class DB {
   }
 
   async _getConnection(setUse = true) {
-    const connection = await mysql.createConnection({
-      host: config.db.connection.host,
-      user: config.db.connection.user,
-      password: config.db.connection.password,
-      connectTimeout: config.db.connection.connectTimeout,
-      decimalNumbers: true,
-    });
+    const connection = this.instrumentConnection(
+      await mysql.createConnection({
+        host: config.db.connection.host,
+        user: config.db.connection.user,
+        password: config.db.connection.password,
+        connectTimeout: config.db.connection.connectTimeout,
+        decimalNumbers: true,
+      })
+    );
     if (setUse) {
       await connection.query(`USE ${config.db.connection.database}`);
     }
@@ -374,7 +388,6 @@ class DB {
       try {
         const dbExists = await this.checkDatabaseExists(connection);
         console.log(dbExists ? 'Database exists' : 'Database does not exist, creating it');
-        console.log('test')
         await connection.query(`CREATE DATABASE IF NOT EXISTS ${config.db.connection.database}`);
         await connection.query(`USE ${config.db.connection.database}`);
 
@@ -394,13 +407,81 @@ class DB {
         connection.end();
       }
     } catch (err) {
-      console.error(JSON.stringify({ message: 'Error initializing database', exception: err.message, connection: config.db.connection }));
+      logger.emit(
+        'database_initialization_error',
+        {
+          error: err,
+          connection: {
+            host: config.db.connection.host,
+            user: config.db.connection.user,
+            database: config.db.connection.database,
+          },
+        },
+        'error'
+      );
     }
   }
 
   async checkDatabaseExists(connection) {
     const [rows] = await connection.execute(`SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?`, [config.db.connection.database]);
     return rows.length > 0;
+  }
+
+  instrumentConnection(connection) {
+    if (connection.__queryLoggingWrapped) {
+      return connection;
+    }
+
+    const originalExecute = connection.execute.bind(connection);
+    const originalQuery = connection.query.bind(connection);
+
+    connection.execute = (sql, params) => this.logDatabaseOperation(sql, params, () => originalExecute(sql, params));
+    connection.query = (sql, params) => this.logDatabaseOperation(sql, params, () => originalQuery(sql, params));
+    connection.__queryLoggingWrapped = true;
+
+    return connection;
+  }
+
+  async logDatabaseOperation(sql, params, operation) {
+    const startedAt = process.hrtime.bigint();
+
+    try {
+      const result = await operation();
+      const [rows] = Array.isArray(result) ? result : [result];
+
+      logger.logDatabaseRequest({
+        sql,
+        parameterCount: Array.isArray(params) ? params.length : 0,
+        durationMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+        rowCount: this.getRowCount(rows),
+      });
+
+      return result;
+    } catch (error) {
+      logger.logDatabaseRequest({
+        sql,
+        parameterCount: Array.isArray(params) ? params.length : 0,
+        durationMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  getRowCount(result) {
+    if (Array.isArray(result)) {
+      return result.length;
+    }
+
+    if (typeof result?.affectedRows === 'number') {
+      return result.affectedRows;
+    }
+
+    if (typeof result?.insertId === 'number' && result.insertId > 0) {
+      return 1;
+    }
+
+    return 0;
   }
 }
 
