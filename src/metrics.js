@@ -1,5 +1,6 @@
 const os = require('os');
 const config = require('./config.js');
+const { DB } = require('./database/database.js');
 
 const metricsConfig = config.metrics ?? {};
 const enabled = Boolean(metricsConfig.endpointUrl && metricsConfig.accountId && metricsConfig.apiKey);
@@ -109,7 +110,7 @@ class MetricsService {
       return;
     }
 
-    const payload = this.buildPayload();
+    const payload = await this.buildPayload();
     const pendingMetrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
     if (pendingMetrics.length === 0) {
       return;
@@ -139,11 +140,13 @@ class MetricsService {
     }
   }
 
-  buildPayload() {
+  async buildPayload() {
     const timeUnixNano = String(Date.now() * 1000000);
+    const activeUsersMetric = await this.makeActiveUsersGauge(timeUnixNano);
     const metrics = [
       this.makeGauge('system_cpu_usage_percent', this.getCpuUsagePercentage(), '%', timeUnixNano),
       this.makeGauge('system_memory_usage_percent', this.getMemoryUsagePercentage(), '%', timeUnixNano),
+      activeUsersMetric,
       this.makeGauge('http_active_requests', this.http.activeRequests, '1', timeUnixNano),
       this.makeSum('http_requests_total', this.http.requestsByRoute, '1', timeUnixNano),
       this.makeSum('http_request_duration_ms_total', this.http.latencyByRoute, 'ms', timeUnixNano),
@@ -176,6 +179,16 @@ class MetricsService {
         },
       ],
     };
+  }
+
+  async makeActiveUsersGauge(timeUnixNano) {
+    try {
+      const activeUsers = await DB.getActiveUserCount();
+      return this.makeGauge('active_users', activeUsers, '1', timeUnixNano);
+    } catch (error) {
+      console.error('Unable to collect active_users metric', error);
+      return null;
+    }
   }
 
   makeGauge(name, value, unit, timeUnixNano) {

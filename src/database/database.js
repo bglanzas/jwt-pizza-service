@@ -174,6 +174,16 @@ class DB {
     }
   }
 
+  async getActiveUserCount() {
+    const connection = await this.getConnection();
+    try {
+      const result = await this.query(connection, `SELECT COUNT(DISTINCT userId) AS activeUsers FROM auth`);
+      return Number(result[0]?.activeUsers || 0);
+    } finally {
+      connection.end();
+    }
+  }
+
   async logoutUser(token) {
     token = this.getTokenSignature(token);
     const connection = await this.getConnection();
