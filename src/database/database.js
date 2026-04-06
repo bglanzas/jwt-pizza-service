@@ -162,7 +162,15 @@ class DB {
     token = this.getTokenSignature(token);
     const connection = await this.getConnection();
     try {
-      await this.query(connection, `INSERT INTO auth (token, userId) VALUES (?, ?) ON DUPLICATE KEY UPDATE token=token`, [token, userId]);
+      await connection.beginTransaction();
+      try {
+        await this.query(connection, `DELETE FROM auth WHERE userId=?`, [userId]);
+        await this.query(connection, `INSERT INTO auth (token, userId) VALUES (?, ?)`, [token, userId]);
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      }
     } finally {
       connection.end();
     }
@@ -506,4 +514,4 @@ class DB {
 }
 
 const db = new DB();
-module.exports = { Role, DB: db };
+module.exports = { Role, DB: db, DBClass: DB };
