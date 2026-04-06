@@ -1,9 +1,9 @@
 const os = require('os');
 const config = require('./config.js');
-const { DB } = require('./database/database.js');
 
 const metricsConfig = config.metrics ?? {};
 const enabled = Boolean(metricsConfig.endpointUrl && metricsConfig.accountId && metricsConfig.apiKey);
+const ACTIVE_USER_WINDOW_MS = 5 * 60 * 1000;
 
 console.log('METRICS FILE LOADED');
 console.log('METRICS MODULE LOADED');
@@ -28,6 +28,7 @@ class MetricsService {
       requestsByRoute: new Map(),
       latencyByRoute: new Map(),
     };
+    this.activeUsers = new Map();
     this.auth = new Map();
     this.user = new Map();
     this.purchase = {
@@ -74,6 +75,7 @@ class MetricsService {
   requestTracker(req, res, next) {
     const startedAt = process.hrtime.bigint();
     this.http.activeRequests += 1;
+    this.trackActiveUser(req);
 
     res.on('finish', () => {
       const latencyMs = this.elapsedMilliseconds(startedAt);
@@ -142,11 +144,10 @@ class MetricsService {
 
   async buildPayload() {
     const timeUnixNano = String(Date.now() * 1000000);
-    const activeUsersMetric = await this.makeActiveUsersGauge(timeUnixNano);
     const metrics = [
       this.makeGauge('system_cpu_usage_percent', this.getCpuUsagePercentage(), '%', timeUnixNano),
       this.makeGauge('system_memory_usage_percent', this.getMemoryUsagePercentage(), '%', timeUnixNano),
-      activeUsersMetric,
+      this.makeActiveUsersGauge(timeUnixNano),
       this.makeGauge('http_active_requests', this.http.activeRequests, '1', timeUnixNano),
       this.makeSum('http_requests_total', this.http.requestsByRoute, '1', timeUnixNano),
       this.makeSum('http_request_duration_ms_total', this.http.latencyByRoute, 'ms', timeUnixNano),
@@ -181,14 +182,8 @@ class MetricsService {
     };
   }
 
-  async makeActiveUsersGauge(timeUnixNano) {
-    try {
-      const activeUsers = await DB.getActiveUserCount();
-      return this.makeGauge('active_users', activeUsers, '1', timeUnixNano);
-    } catch (error) {
-      console.error('Unable to collect active_users metric', error);
-      return null;
-    }
+  makeActiveUsersGauge(timeUnixNano) {
+    return this.makeGauge('active_users', this.getActiveUserCount(), '1', timeUnixNano);
   }
 
   makeGauge(name, value, unit, timeUnixNano) {
@@ -238,6 +233,45 @@ class MetricsService {
   deserializeLabels(serializedLabels) {
     const labels = JSON.parse(serializedLabels);
     return Object.entries(labels).map(([key, value]) => this.attribute(key, value));
+  }
+
+  trackActiveUser(req, now = Date.now()) {
+    const visitorKey = this.getVisitorKey(req);
+    if (!visitorKey) {
+      return;
+    }
+
+    this.activeUsers.set(visitorKey, now);
+    this.pruneActiveUsers(now);
+  }
+
+  getVisitorKey(req) {
+    if (req.user?.id) {
+      return `user:${req.user.id}`;
+    }
+
+    const forwardedFor = req.headers['x-forwarded-for'];
+    const ip = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(',')[0]?.trim() || req.ip;
+    const userAgent = req.headers['user-agent'] || 'unknown-agent';
+    if (!ip) {
+      return null;
+    }
+
+    return `guest:${ip}:${userAgent}`;
+  }
+
+  pruneActiveUsers(now = Date.now()) {
+    const cutoff = now - ACTIVE_USER_WINDOW_MS;
+    for (const [visitorKey, lastSeenAt] of this.activeUsers.entries()) {
+      if (lastSeenAt < cutoff) {
+        this.activeUsers.delete(visitorKey);
+      }
+    }
+  }
+
+  getActiveUserCount(now = Date.now()) {
+    this.pruneActiveUsers(now);
+    return this.activeUsers.size;
   }
 
   attribute(key, value) {
@@ -295,3 +329,4 @@ class MetricsService {
 }
 
 module.exports = new MetricsService();
+module.exports.MetricsService = MetricsService;

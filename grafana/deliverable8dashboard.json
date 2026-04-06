@@ -447,7 +447,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum({__name__=~\"http_active_requests.*\"})\n",
+          "expr": "sum(active_users)\n",
           "legendFormat": "Users",
           "range": true,
           "refId": "A"
