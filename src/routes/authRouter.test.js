@@ -64,6 +64,7 @@ test('register returns user and token', async () => {
   expect(res.body.user).toMatchObject(baseUser);
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.addUser).toHaveBeenCalled();
+  expect(jwt.sign).toHaveBeenCalledWith(baseUser, expect.any(String), { expiresIn: '60m' });
   expect(DB.loginUser).toHaveBeenCalledWith(baseUser.id, 'signed.jwt.token');
 });
 
@@ -103,6 +104,7 @@ test('login returns user and token', async () => {
   expect(res.body.user).toMatchObject(baseUser);
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.getUser).toHaveBeenCalledWith('reg@test.com', 'a');
+  expect(jwt.sign).toHaveBeenCalledWith(baseUser, expect.any(String), { expiresIn: '60m' });
   expect(DB.loginUser).toHaveBeenCalledWith(baseUser.id, 'signed.jwt.token');
   expect(metrics.authEvent).toHaveBeenCalledWith('login', true);
 });

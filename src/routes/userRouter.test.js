@@ -62,6 +62,7 @@ test('update user returns updated user and token', async () => {
   expect(res.body.user).toEqual(updatedUser);
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.updateUser).toHaveBeenCalledWith(2, 'new', 'new@jwt.com', 'pw');
+  expect(jwt.sign).toHaveBeenCalledWith(updatedUser, expect.any(String), { expiresIn: '60m' });
   expect(DB.loginUser).toHaveBeenCalledWith(2, 'signed.jwt.token');
 });
 

@@ -39,6 +39,7 @@ ssh -i "$key" ubuntu@$hostname << ENDSSH
 bash -i
 cd services/${service}
 npm install
+node src/invalidateSessions.js
 pm2 restart ${service}
 ENDSSH
 

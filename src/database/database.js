@@ -212,6 +212,15 @@ class DB {
     }
   }
 
+  async invalidateAllSessions() {
+    const connection = await this.getConnection();
+    try {
+      await this.query(connection, `DELETE FROM auth`);
+    } finally {
+      connection.end();
+    }
+  }
+
   async getOrders(user, page = 1) {
     const connection = await this.getConnection();
     try {

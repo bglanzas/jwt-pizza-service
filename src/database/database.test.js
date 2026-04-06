@@ -47,3 +47,20 @@ describe('DB.loginUser', () => {
     expect(connection.end).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('DB.invalidateAllSessions', () => {
+  test('deletes every auth row', async () => {
+    const db = Object.create(DBClass.prototype);
+    const connection = {
+      end: jest.fn(),
+    };
+
+    db.getConnection = jest.fn().mockResolvedValue(connection);
+    db.query = jest.fn().mockResolvedValue({});
+
+    await db.invalidateAllSessions();
+
+    expect(db.query).toHaveBeenCalledWith(connection, 'DELETE FROM auth');
+    expect(connection.end).toHaveBeenCalledTimes(1);
+  });
+});
