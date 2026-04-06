@@ -236,28 +236,38 @@ class MetricsService {
   }
 
   trackActiveUser(req, now = Date.now()) {
-    const visitorKey = this.getVisitorKey(req);
-    if (!visitorKey) {
+    if (!req.user?.id) {
       return;
     }
 
-    this.activeUsers.set(visitorKey, now);
+    this.markUserActive(req.user.id, now);
+  }
+
+  markUserActive(userId, now = Date.now()) {
+    const userKey = this.getUserKey(userId);
+    if (!userKey) {
+      return;
+    }
+
+    this.activeUsers.set(userKey, now);
     this.pruneActiveUsers(now);
   }
 
-  getVisitorKey(req) {
-    if (req.user?.id) {
-      return `user:${req.user.id}`;
+  markUserInactive(userId) {
+    const userKey = this.getUserKey(userId);
+    if (!userKey) {
+      return;
     }
 
-    const forwardedFor = req.headers['x-forwarded-for'];
-    const ip = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(',')[0]?.trim() || req.ip;
-    const userAgent = req.headers['user-agent'] || 'unknown-agent';
-    if (!ip) {
+    this.activeUsers.delete(userKey);
+  }
+
+  getUserKey(userId) {
+    if (!userId) {
       return null;
     }
 
-    return `guest:${ip}:${userAgent}`;
+    return `user:${userId}`;
   }
 
   pruneActiveUsers(now = Date.now()) {
