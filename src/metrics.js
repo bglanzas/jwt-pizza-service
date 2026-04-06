@@ -183,7 +183,7 @@ class MetricsService {
   }
 
   makeActiveUsersGauge(timeUnixNano) {
-    return this.makeGauge('active_users', this.getActiveUserCount(), '1', timeUnixNano);
+    return this.makeGauge('active_users', this.getActiveUserCount(), undefined, timeUnixNano);
   }
 
   makeGauge(name, value, unit, timeUnixNano) {

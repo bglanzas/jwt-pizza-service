@@ -48,4 +48,12 @@ describe('MetricsService active_users', () => {
     expect(metrics.getActiveUserCount(now + 5 * 60 * 1000 - 1)).toBe(1);
     expect(metrics.getActiveUserCount(now + 5 * 60 * 1000 + 1)).toBe(0);
   });
+
+  test('exports active_users without a unit suffix trigger', () => {
+    const metrics = new MetricsService();
+    const metric = metrics.makeActiveUsersGauge('123');
+
+    expect(metric.name).toBe('active_users');
+    expect(metric.unit).toBeUndefined();
+  });
 });
