@@ -33,6 +33,11 @@ class DB {
   async addUser(user) {
     const connection = await this.getConnection();
     try {
+      const existingUsers = await this.query(connection, `SELECT id FROM user WHERE email=? LIMIT 1`, [user.email]);
+      if (existingUsers.length > 0) {
+        throw new StatusCodeError('user already exists', 409);
+      }
+
       const hashedPassword = await bcrypt.hash(user.password, 10);
 
       const userResult = await this.query(connection, `INSERT INTO user (name, email, password) VALUES (?, ?, ?)`, [user.name, user.email, hashedPassword]);
@@ -177,7 +182,12 @@ class DB {
   async getActiveUserCount() {
     const connection = await this.getConnection();
     try {
-      const result = await this.query(connection, `SELECT COUNT(DISTINCT userId) AS activeUsers FROM auth`);
+      const result = await this.query(
+        connection,
+        `SELECT COUNT(DISTINCT LOWER(user.email)) AS activeUsers
+         FROM auth
+         INNER JOIN user ON user.id = auth.userId`
+      );
       return Number(result[0]?.activeUsers || 0);
     } finally {
       connection.end();
