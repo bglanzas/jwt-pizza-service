@@ -1,9 +1,9 @@
 const os = require('os');
 const config = require('./config.js');
+const { DB } = require('./database/database.js');
 
 const metricsConfig = config.metrics ?? {};
 const enabled = Boolean(metricsConfig.endpointUrl && metricsConfig.accountId && metricsConfig.apiKey);
-const ACTIVE_USER_WINDOW_MS = 5 * 60 * 1000;
 
 console.log('METRICS FILE LOADED');
 console.log('METRICS MODULE LOADED');
@@ -28,7 +28,6 @@ class MetricsService {
       requestsByRoute: new Map(),
       latencyByRoute: new Map(),
     };
-    this.activeUsers = new Map();
     this.auth = new Map();
     this.user = new Map();
     this.purchase = {
@@ -75,7 +74,6 @@ class MetricsService {
   requestTracker(req, res, next) {
     const startedAt = process.hrtime.bigint();
     this.http.activeRequests += 1;
-    this.trackActiveUser(req);
 
     res.on('finish', () => {
       const latencyMs = this.elapsedMilliseconds(startedAt);
@@ -144,10 +142,11 @@ class MetricsService {
 
   async buildPayload() {
     const timeUnixNano = String(Date.now() * 1000000);
+    const activeUsersMetric = await this.makeActiveUsersGauge(timeUnixNano);
     const metrics = [
       this.makeGauge('system_cpu_usage_percent', this.getCpuUsagePercentage(), '%', timeUnixNano),
       this.makeGauge('system_memory_usage_percent', this.getMemoryUsagePercentage(), '%', timeUnixNano),
-      this.makeActiveUsersGauge(timeUnixNano),
+      activeUsersMetric,
       this.makeGauge('http_active_requests', this.http.activeRequests, '1', timeUnixNano),
       this.makeSum('http_requests_total', this.http.requestsByRoute, '1', timeUnixNano),
       this.makeSum('http_request_duration_ms_total', this.http.latencyByRoute, 'ms', timeUnixNano),
@@ -182,8 +181,14 @@ class MetricsService {
     };
   }
 
-  makeActiveUsersGauge(timeUnixNano) {
-    return this.makeGauge('active_users', this.getActiveUserCount(), undefined, timeUnixNano);
+  async makeActiveUsersGauge(timeUnixNano) {
+    try {
+      const activeUsers = await DB.getActiveUserCount();
+      return this.makeGauge('active_users', activeUsers, undefined, timeUnixNano);
+    } catch (error) {
+      console.error('Unable to collect active_users metric', error);
+      return null;
+    }
   }
 
   makeGauge(name, value, unit, timeUnixNano) {
@@ -233,55 +238,6 @@ class MetricsService {
   deserializeLabels(serializedLabels) {
     const labels = JSON.parse(serializedLabels);
     return Object.entries(labels).map(([key, value]) => this.attribute(key, value));
-  }
-
-  trackActiveUser(req, now = Date.now()) {
-    if (!req.user?.id) {
-      return;
-    }
-
-    this.markUserActive(req.user.id, now);
-  }
-
-  markUserActive(userId, now = Date.now()) {
-    const userKey = this.getUserKey(userId);
-    if (!userKey) {
-      return;
-    }
-
-    this.activeUsers.set(userKey, now);
-    this.pruneActiveUsers(now);
-  }
-
-  markUserInactive(userId) {
-    const userKey = this.getUserKey(userId);
-    if (!userKey) {
-      return;
-    }
-
-    this.activeUsers.delete(userKey);
-  }
-
-  getUserKey(userId) {
-    if (!userId) {
-      return null;
-    }
-
-    return `user:${userId}`;
-  }
-
-  pruneActiveUsers(now = Date.now()) {
-    const cutoff = now - ACTIVE_USER_WINDOW_MS;
-    for (const [visitorKey, lastSeenAt] of this.activeUsers.entries()) {
-      if (lastSeenAt < cutoff) {
-        this.activeUsers.delete(visitorKey);
-      }
-    }
-  }
-
-  getActiveUserCount(now = Date.now()) {
-    this.pruneActiveUsers(now);
-    return this.activeUsers.size;
   }
 
   attribute(key, value) {

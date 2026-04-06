@@ -1,85 +1,54 @@
+jest.mock('./database/database.js', () => ({
+  DB: {
+    getActiveUserCount: jest.fn(),
+  },
+}));
+
+const { DB } = require('./database/database.js');
 const { MetricsService } = require('./metrics.js');
 
 describe('MetricsService active_users', () => {
-  test('counts distinct authenticated users active in the rolling window', () => {
-    const metrics = new MetricsService();
-    const now = 1_000_000;
-
-    metrics.trackActiveUser(
-      {
-        user: { id: 42 },
-        headers: { 'user-agent': 'browser-a' },
-        ip: '10.0.0.1',
-      },
-      now
-    );
-
-    metrics.trackActiveUser(
-      {
-        user: { id: 42 },
-        headers: { 'user-agent': 'browser-b' },
-        ip: '10.0.0.9',
-      },
-      now + 1_000
-    );
-
-    metrics.trackActiveUser(
-      {
-        user: { id: 7 },
-        headers: { 'user-agent': 'browser-c' },
-        ip: '10.0.0.2',
-      },
-      now + 2_000
-    );
-
-    expect(metrics.getActiveUserCount(now + 2_000)).toBe(2);
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  test('ignores unauthenticated requests', () => {
+  test('reads the active user count from the shared auth store', async () => {
     const metrics = new MetricsService();
-    const now = 1_000_000;
+    DB.getActiveUserCount.mockResolvedValueOnce(1);
 
-    metrics.trackActiveUser(
-      {
-        headers: { 'user-agent': 'browser-a' },
-        ip: '10.0.0.1',
-      },
-      now
+    const metric = await metrics.makeActiveUsersGauge('123');
+
+    expect(DB.getActiveUserCount).toHaveBeenCalledTimes(1);
+    expect(metric).toEqual(
+      expect.objectContaining({
+        name: 'active_users',
+        unit: undefined,
+      })
     );
-
-    expect(metrics.getActiveUserCount(now)).toBe(0);
-  });
-
-  test('expires users after five minutes of inactivity', () => {
-    const metrics = new MetricsService();
-    const now = 1_000_000;
-
-    metrics.trackActiveUser(
-      {
-        user: { id: 42 },
-        headers: { 'user-agent': 'browser-a' },
-        ip: '10.0.0.1',
-      },
-      now
+    expect(metric.gauge.dataPoints[0]).toEqual(
+      expect.objectContaining({
+        asDouble: 1,
+        timeUnixNano: '123',
+      })
     );
-
-    expect(metrics.getActiveUserCount(now + 5 * 60 * 1000 - 1)).toBe(1);
-    expect(metrics.getActiveUserCount(now + 5 * 60 * 1000 + 1)).toBe(0);
   });
 
-  test('removes a user immediately when they log out', () => {
+  test('returns null when active user collection fails', async () => {
     const metrics = new MetricsService();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    DB.getActiveUserCount.mockRejectedValueOnce(new Error('db down'));
 
-    metrics.markUserActive(42);
-    expect(metrics.getActiveUserCount()).toBe(1);
+    const metric = await metrics.makeActiveUsersGauge('123');
 
-    metrics.markUserInactive(42);
-    expect(metrics.getActiveUserCount()).toBe(0);
+    expect(metric).toBeNull();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
-  test('exports active_users without a unit suffix trigger', () => {
+  test('exports active_users without a unit suffix trigger', async () => {
     const metrics = new MetricsService();
-    const metric = metrics.makeActiveUsersGauge('123');
+    DB.getActiveUserCount.mockResolvedValueOnce(2);
+    const metric = await metrics.makeActiveUsersGauge('123');
 
     expect(metric.name).toBe('active_users');
     expect(metric.unit).toBeUndefined();

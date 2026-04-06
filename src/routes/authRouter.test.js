@@ -24,8 +24,6 @@ jest.mock('../metrics.js', () => {
   return {
     requestTracker: (req, res, next) => next(),
     authEvent: jest.fn(),
-    markUserActive: jest.fn(),
-    markUserInactive: jest.fn(),
   };
 });
 
@@ -67,7 +65,6 @@ test('register returns user and token', async () => {
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.addUser).toHaveBeenCalled();
   expect(DB.loginUser).toHaveBeenCalledWith(baseUser.id, 'signed.jwt.token');
-  expect(metrics.markUserActive).toHaveBeenCalledWith(baseUser.id);
 });
 
 test('register emits sanitized http request log', async () => {
@@ -107,7 +104,6 @@ test('login returns user and token', async () => {
   expect(res.body.token).toBe('signed.jwt.token');
   expect(DB.getUser).toHaveBeenCalledWith('reg@test.com', 'a');
   expect(DB.loginUser).toHaveBeenCalledWith(baseUser.id, 'signed.jwt.token');
-  expect(metrics.markUserActive).toHaveBeenCalledWith(baseUser.id);
   expect(metrics.authEvent).toHaveBeenCalledWith('login', true);
 });
 
@@ -128,5 +124,4 @@ test('logout clears auth token', async () => {
   expect(res.status).toBe(200);
   expect(res.body.message).toBe('logout successful');
   expect(DB.logoutUser).toHaveBeenCalledWith('test.token.value');
-  expect(metrics.markUserInactive).toHaveBeenCalledWith(baseUser.id);
 });
