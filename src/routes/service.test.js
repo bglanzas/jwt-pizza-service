@@ -58,4 +58,5 @@ test('error handler returns statusCode from thrown error', async () => {
 
   expect(res.status).toBe(403);
   expect(res.body.message).toBe('unable to add menu item');
+  expect(res.body.stack).toBeUndefined();
 });

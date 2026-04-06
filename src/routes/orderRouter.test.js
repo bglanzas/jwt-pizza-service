@@ -24,9 +24,17 @@ const jwt = require('jsonwebtoken');
 const { DB } = require('../database/database.js');
 const app = require('../service');
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks();
   global.fetch = jest.fn();
+  jest.spyOn(Math, 'random').mockReturnValue(0.9);
+  DB.isLoggedIn.mockResolvedValueOnce(true);
+  jwt.verify.mockReturnValueOnce(adminUser);
+  await request(app).put('/api/order/chaos/false').set('Authorization', 'Bearer admin.token');
+});
+
+afterEach(() => {
+  Math.random.mockRestore();
 });
 
 const dinerUser = { id: 7, name: 'diner', email: 'd@jwt.com', roles: [{ role: 'diner' }] };
@@ -91,6 +99,45 @@ test('get orders returns user orders', async () => {
   expect(res.status).toBe(200);
   expect(res.body).toEqual({ dinerId: 7, orders: [], page: '2' });
   expect(DB.getOrders).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), '2');
+});
+
+test('chaos toggle ignores non-admin users', async () => {
+  mockAuth(dinerUser);
+
+  const res = await request(app).put('/api/order/chaos/true').set('Authorization', 'Bearer diner.token');
+
+  expect(res.status).toBe(200);
+  expect(res.body).toEqual({ chaos: false });
+});
+
+test('admin can enable chaos and order can fail before DB work', async () => {
+  mockAuth(adminUser);
+  const toggleRes = await request(app).put('/api/order/chaos/true').set('Authorization', 'Bearer admin.token');
+
+  expect(toggleRes.status).toBe(200);
+  expect(toggleRes.body).toEqual({ chaos: true });
+
+  Math.random.mockReturnValueOnce(0.1);
+  mockAuth(dinerUser);
+  const orderRes = await request(app)
+    .post('/api/order')
+    .set('Authorization', 'Bearer diner.token')
+    .send({ franchiseId: 1, storeId: 2, items: [] });
+
+  expect(orderRes.status).toBe(500);
+  expect(orderRes.body.message).toBe('Chaos monkey');
+  expect(DB.addDinerOrder).not.toHaveBeenCalled();
+});
+
+test('admin can disable chaos after enabling it', async () => {
+  mockAuth(adminUser);
+  await request(app).put('/api/order/chaos/true').set('Authorization', 'Bearer admin.token');
+
+  mockAuth(adminUser);
+  const disableRes = await request(app).put('/api/order/chaos/false').set('Authorization', 'Bearer admin.token');
+
+  expect(disableRes.status).toBe(200);
+  expect(disableRes.body).toEqual({ chaos: false });
 });
 
 test('create order returns factory jwt on success', async () => {

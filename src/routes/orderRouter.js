@@ -7,6 +7,7 @@ const metrics = require('../metrics.js');
 const logger = require('../logger.js');
 
 const orderRouter = express.Router();
+let enableChaos = false;
 
 orderRouter.docs = [
   {
@@ -23,6 +24,14 @@ orderRouter.docs = [
     description: 'Add an item to the menu',
     example: `curl -X PUT localhost:3000/api/order/menu -H 'Content-Type: application/json' -d '{ "title":"Student", "description": "No topping, no sauce, just carbs", "image":"pizza9.png", "price": 0.0001 }'  -H 'Authorization: Bearer tttttt'`,
     response: [{ id: 1, title: 'Student', description: 'No topping, no sauce, just carbs', image: 'pizza9.png', price: 0.0001 }],
+  },
+  {
+    method: 'PUT',
+    path: '/api/order/chaos/:state',
+    requiresAuth: true,
+    description: 'Enable or disable chaos testing for order creation',
+    example: `curl -X PUT localhost:3000/api/order/chaos/true -H 'Authorization: Bearer tttttt'`,
+    response: { chaos: true },
   },
   {
     method: 'GET',
@@ -73,10 +82,29 @@ orderRouter.get(
   })
 );
 
+// setChaos
+orderRouter.put(
+  '/chaos/:state',
+  authRouter.authenticateToken,
+  asyncHandler(async (req, res) => {
+    if (req.user.isRole(Role.Admin)) {
+      enableChaos = req.params.state === 'true';
+    }
+
+    res.json({ chaos: enableChaos });
+  })
+);
+
 // createOrder
 orderRouter.post(
   '/',
   authRouter.authenticateToken,
+  (req, res, next) => {
+    if (enableChaos && Math.random() < 0.5) {
+      throw new StatusCodeError('Chaos monkey', 500);
+    }
+    next();
+  },
   asyncHandler(async (req, res) => {
     const start = process.hrtime.bigint();
     const orderReq = req.body;
