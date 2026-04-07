@@ -1,4 +1,4 @@
-const { createAuthorizationHeader, createGrafanaPayload, createLogEntry, sanitize } = require('./logger.js');
+const { LoggerService, createAuthorizationHeader, createGrafanaPayload, createLogEntry, sanitize } = require('./logger.js');
 
 test('sanitize redacts confidential fields and string content', () => {
   const result = sanitize({
@@ -68,5 +68,51 @@ test('createGrafanaPayload builds a loki stream payload', () => {
         values: [[expect.any(String), JSON.stringify(entry)]],
       },
     ],
+  });
+});
+
+test('httpLogger records protocol host and full request url', () => {
+  const logger = new LoggerService({});
+  const logHttpRequest = jest.spyOn(logger, 'logHttpRequest').mockImplementation(() => {});
+  const req = {
+    method: 'GET',
+    originalUrl: '/api/order/menu?page=1',
+    path: '/api/order/menu',
+    protocol: 'http',
+    headers: {
+      host: 'localhost:3000',
+      'x-forwarded-proto': 'https',
+    },
+    body: undefined,
+    get: jest.fn((header) => req.headers[header]),
+  };
+  const finishHandlers = [];
+  const res = {
+    statusCode: 200,
+    json: jest.fn((body) => body),
+    send: jest.fn((body) => body),
+    on: jest.fn((event, handler) => {
+      if (event === 'finish') {
+        finishHandlers.push(handler);
+      }
+    }),
+  };
+  const next = jest.fn();
+
+  logger.httpLogger(req, res, next);
+  res.json({ ok: true });
+  finishHandlers[0]();
+
+  expect(next).toHaveBeenCalled();
+  expect(logHttpRequest).toHaveBeenCalledWith({
+    method: 'GET',
+    protocol: 'https',
+    host: 'localhost:3000',
+    path: '/api/order/menu?page=1',
+    url: 'https://localhost:3000/api/order/menu?page=1',
+    statusCode: 200,
+    hasAuthorizationHeader: false,
+    requestBody: undefined,
+    responseBody: { ok: true },
   });
 });

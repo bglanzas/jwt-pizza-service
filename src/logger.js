@@ -185,6 +185,31 @@ async function readResponseText(response) {
   }
 }
 
+function getRequestProtocol(req) {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  if (typeof forwardedProto === 'string' && forwardedProto.length > 0) {
+    return forwardedProto.split(',')[0].trim();
+  }
+
+  if (req.protocol) {
+    return req.protocol;
+  }
+
+  return req.socket?.encrypted ? 'https' : 'http';
+}
+
+function getRequestHost(req) {
+  return req.get?.('host') || req.headers.host;
+}
+
+function getRequestUrl(req, path, protocol, host) {
+  if (!host) {
+    return path;
+  }
+
+  return `${protocol}://${host}${path}`;
+}
+
 class LoggerService {
   constructor(loggingConfig = config.logging ?? {}) {
     this.config = loggingConfig;
@@ -211,9 +236,16 @@ class LoggerService {
     };
 
     res.on('finish', () => {
+      const path = req.originalUrl || req.path;
+      const protocol = getRequestProtocol(req);
+      const host = getRequestHost(req);
+
       this.logHttpRequest({
         method: req.method,
-        path: req.originalUrl || req.path,
+        protocol,
+        host,
+        path,
+        url: getRequestUrl(req, path, protocol, host),
         statusCode: res.statusCode,
         hasAuthorizationHeader: Boolean(req.headers.authorization),
         requestBody: req.body,
