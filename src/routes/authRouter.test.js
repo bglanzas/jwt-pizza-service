@@ -31,6 +31,7 @@ const jwt = require('jsonwebtoken');
 const { DB } = require('../database/database.js');
 const metrics = require('../metrics.js');
 const app = require('../service');
+const { resetLoginRateLimiter } = require('../security/loginRateLimiter.js');
 
 const baseUser = { id: 12, name: 'pizza diner', email: 'reg@test.com', roles: [{ role: 'diner' }] };
 
@@ -48,6 +49,7 @@ function findLogEntry(calls, event) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetLoginRateLimiter();
 });
 
 test('register rejects missing fields', async () => {
@@ -109,6 +111,14 @@ test('login returns user and token', async () => {
   expect(metrics.authEvent).toHaveBeenCalledWith('login', true);
 });
 
+test('login rejects missing credentials', async () => {
+  const res = await request(app).put('/api/auth').send({ email: 'reg@test.com' });
+
+  expect(res.status).toBe(400);
+  expect(res.body.message).toBe('email and password are required');
+  expect(DB.getUser).not.toHaveBeenCalled();
+});
+
 test('login failure records failed auth metric', async () => {
   DB.getUser.mockRejectedValueOnce(Object.assign(new Error('unknown user'), { statusCode: 404 }));
   const res = await request(app).put('/api/auth').send({ email: 'reg@test.com', password: 'wrong' });
@@ -116,6 +126,22 @@ test('login failure records failed auth metric', async () => {
   expect(res.status).toBe(404);
   expect(res.body.message).toBe('unknown user');
   expect(metrics.authEvent).toHaveBeenCalledWith('login', false);
+});
+
+test('login rate limits repeated failed attempts', async () => {
+  DB.getUser.mockRejectedValue(Object.assign(new Error('unknown user'), { statusCode: 404 }));
+
+  for (let i = 0; i < 5; i += 1) {
+    const res = await request(app).put('/api/auth').send({ email: 'reg@test.com', password: 'wrong' });
+    expect(res.status).toBe(404);
+  }
+
+  const res = await request(app).put('/api/auth').send({ email: 'reg@test.com', password: 'wrong' });
+
+  expect(res.status).toBe(429);
+  expect(res.body.message).toBe('too many login attempts');
+  expect(res.headers['retry-after']).toBeDefined();
+  expect(DB.getUser).toHaveBeenCalledTimes(5);
 });
 
 test('logout clears auth token', async () => {

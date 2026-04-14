@@ -8,6 +8,8 @@ const logger = require('../logger.js');
 
 const orderRouter = express.Router();
 let enableChaos = false;
+const MIN_MENU_PRICE = 0.001;
+const MAX_MENU_PRICE = 1000;
 
 orderRouter.docs = [
   {
@@ -22,8 +24,8 @@ orderRouter.docs = [
     path: '/api/order/menu',
     requiresAuth: true,
     description: 'Add an item to the menu',
-    example: `curl -X PUT localhost:3000/api/order/menu -H 'Content-Type: application/json' -d '{ "title":"Student", "description": "No topping, no sauce, just carbs", "image":"pizza9.png", "price": 0.0001 }'  -H 'Authorization: Bearer tttttt'`,
-    response: [{ id: 1, title: 'Student', description: 'No topping, no sauce, just carbs', image: 'pizza9.png', price: 0.0001 }],
+    example: `curl -X PUT localhost:3000/api/order/menu -H 'Content-Type: application/json' -d '{ "title":"Student", "description": "No topping, no sauce, just carbs", "image":"pizza9.png", "price": 0.01 }'  -H 'Authorization: Bearer tttttt'`,
+    response: [{ id: 1, title: 'Student', description: 'No topping, no sauce, just carbs', image: 'pizza9.png', price: 0.01 }],
   },
   {
     method: 'PUT',
@@ -67,7 +69,7 @@ orderRouter.put(
       throw new StatusCodeError('unable to add menu item', 403);
     }
 
-    const addMenuItemReq = req.body;
+    const addMenuItemReq = normalizeMenuItem(req.body);
     await DB.addMenuItem(addMenuItemReq);
     res.send(await DB.getMenu());
   })
@@ -179,6 +181,23 @@ async function readResponseBody(response) {
 
 function isObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeMenuItem(item) {
+  const title = typeof item?.title === 'string' ? item.title.trim() : '';
+  const description = typeof item?.description === 'string' ? item.description.trim() : '';
+  const image = typeof item?.image === 'string' ? item.image.trim() : '';
+  const price = Number(item?.price);
+
+  if (!title || !description || !image) {
+    throw new StatusCodeError('title, description, image, and price are required', 400);
+  }
+
+  if (!Number.isFinite(price) || price < MIN_MENU_PRICE || price > MAX_MENU_PRICE) {
+    throw new StatusCodeError(`menu price must be between ${MIN_MENU_PRICE} and ${MAX_MENU_PRICE}`, 400);
+  }
+
+  return { title, description, image, price };
 }
 
 module.exports = orderRouter;

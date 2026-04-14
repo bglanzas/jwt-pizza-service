@@ -64,3 +64,83 @@ describe('DB.invalidateAllSessions', () => {
     expect(connection.end).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('DB.addDinerOrder', () => {
+  test('persists menu pricing from the database instead of the request body', async () => {
+    const db = Object.create(DBClass.prototype);
+    const connection = {
+      beginTransaction: jest.fn().mockResolvedValue(undefined),
+      commit: jest.fn().mockResolvedValue(undefined),
+      rollback: jest.fn().mockResolvedValue(undefined),
+      end: jest.fn(),
+    };
+
+    db.getConnection = jest.fn().mockResolvedValue(connection);
+    db.getMenuItem = jest.fn().mockResolvedValue({ id: 3, description: 'A garden of delight', price: 12.99 });
+    db.query = jest
+      .fn()
+      .mockResolvedValueOnce({ insertId: 77 })
+      .mockResolvedValueOnce({});
+
+    const order = await db.addDinerOrder(
+      { id: 4 },
+      {
+        franchiseId: 1,
+        storeId: 2,
+        items: [{ menuId: 3, description: 'tampered', price: -500 }],
+      }
+    );
+
+    expect(connection.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(db.getMenuItem).toHaveBeenCalledWith(connection, 3);
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      connection,
+      'INSERT INTO dinerOrder (dinerId, franchiseId, storeId, date) VALUES (?, ?, ?, now())',
+      [4, 1, 2]
+    );
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      connection,
+      'INSERT INTO orderItem (orderId, menuId, description, price) VALUES (?, ?, ?, ?)',
+      [77, 3, 'A garden of delight', 12.99]
+    );
+    expect(connection.commit).toHaveBeenCalledTimes(1);
+    expect(connection.rollback).not.toHaveBeenCalled();
+    expect(connection.end).toHaveBeenCalledTimes(1);
+    expect(order).toEqual({
+      franchiseId: 1,
+      storeId: 2,
+      items: [{ menuId: 3, description: 'A garden of delight', price: 12.99 }],
+      id: 77,
+    });
+  });
+
+  test('rejects empty orders before creating rows', async () => {
+    const db = Object.create(DBClass.prototype);
+    const connection = {
+      beginTransaction: jest.fn().mockResolvedValue(undefined),
+      commit: jest.fn().mockResolvedValue(undefined),
+      rollback: jest.fn().mockResolvedValue(undefined),
+      end: jest.fn(),
+    };
+
+    db.getConnection = jest.fn().mockResolvedValue(connection);
+    db.query = jest.fn();
+
+    await expect(
+      db.addDinerOrder(
+        { id: 4 },
+        {
+          franchiseId: 1,
+          storeId: 2,
+          items: [],
+        }
+      )
+    ).rejects.toMatchObject({ message: 'order must include at least one item', statusCode: 400 });
+
+    expect(connection.beginTransaction).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
+    expect(connection.end).toHaveBeenCalledTimes(1);
+  });
+});

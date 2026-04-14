@@ -91,6 +91,18 @@ test('add menu item returns updated menu for admin', async () => {
   expect(DB.addMenuItem).toHaveBeenCalled();
 });
 
+test('add menu item rejects invalid prices', async () => {
+  mockAuth(adminUser);
+  const res = await request(app)
+    .put('/api/order/menu')
+    .set('Authorization', 'Bearer admin.token')
+    .send({ title: 'Student', description: 'Carbs', image: 'pizza.png', price: -5 });
+
+  expect(res.status).toBe(400);
+  expect(res.body.message).toBe('menu price must be between 0.001 and 1000');
+  expect(DB.addMenuItem).not.toHaveBeenCalled();
+});
+
 test('get orders returns user orders', async () => {
   mockAuth(dinerUser);
   DB.getOrders.mockResolvedValueOnce({ dinerId: 7, orders: [], page: '2' });

@@ -87,9 +87,19 @@ test('create franchise succeeds for admin', async () => {
   expect(res.body).toEqual({ id: 1, name: 'pizzaPocket' });
 });
 
-test('delete franchise calls db and returns message', async () => {
+test('delete franchise rejects non-admin users', async () => {
+  mockAuth(franchiseeUser);
+  const res = await request(app).delete('/api/franchise/5').set('Authorization', 'Bearer user.token');
+
+  expect(res.status).toBe(403);
+  expect(res.body.message).toBe('unable to delete a franchise');
+  expect(DB.deleteFranchise).not.toHaveBeenCalled();
+});
+
+test('delete franchise calls db and returns message for admin', async () => {
+  mockAuth(adminUser);
   DB.deleteFranchise.mockResolvedValueOnce();
-  const res = await request(app).delete('/api/franchise/5');
+  const res = await request(app).delete('/api/franchise/5').set('Authorization', 'Bearer admin.token');
   expect(res.status).toBe(200);
   expect(res.body.message).toBe('franchise deleted');
   expect(DB.deleteFranchise).toHaveBeenCalledWith(5);

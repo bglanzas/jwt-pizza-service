@@ -4,6 +4,7 @@ const config = require('../config.js');
 const { asyncHandler } = require('../endpointHelper.js');
 const { DB, Role } = require('../database/database.js');
 const metrics = require('../metrics.js');
+const { checkLoginAllowed, recordFailedLogin, recordSuccessfulLogin } = require('../security/loginRateLimiter.js');
 
 const authRouter = express.Router();
 
@@ -75,12 +76,25 @@ authRouter.put(
   '/',
   asyncHandler(async (req, res) => {
     const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: 'email and password are required' });
+    }
+
+    const loginStatus = checkLoginAllowed(req, email);
+    if (!loginStatus.allowed) {
+      metrics.authEvent('login', false);
+      res.setHeader('Retry-After', Math.ceil(loginStatus.retryAfterMs / 1000));
+      return res.status(429).json({ message: 'too many login attempts' });
+    }
+
     try {
       const user = await DB.getUser(email, password);
       const auth = await setAuth(user);
+      recordSuccessfulLogin(req, email);
       metrics.authEvent('login', true);
       res.json({ user: user, token: auth });
     } catch (error) {
+      recordFailedLogin(req, email);
       metrics.authEvent('login', false);
       throw error;
     }

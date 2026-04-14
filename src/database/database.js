@@ -239,16 +239,45 @@ class DB {
   async addDinerOrder(user, order) {
     const connection = await this.getConnection();
     try {
-      const orderResult = await this.query(connection, `INSERT INTO dinerOrder (dinerId, franchiseId, storeId, date) VALUES (?, ?, ?, now())`, [user.id, order.franchiseId, order.storeId]);
-      const orderId = orderResult.insertId;
-      for (const item of order.items) {
-        const menuId = await this.getID(connection, 'id', item.menuId, 'menu');
-        await this.query(connection, `INSERT INTO orderItem (orderId, menuId, description, price) VALUES (?, ?, ?, ?)`, [orderId, menuId, item.description, item.price]);
+      if (!Array.isArray(order.items) || order.items.length === 0) {
+        throw new StatusCodeError('order must include at least one item', 400);
       }
-      return { ...order, id: orderId };
+
+      await connection.beginTransaction();
+      try {
+        const orderResult = await this.query(connection, `INSERT INTO dinerOrder (dinerId, franchiseId, storeId, date) VALUES (?, ?, ?, now())`, [user.id, order.franchiseId, order.storeId]);
+        const orderId = orderResult.insertId;
+        const items = [];
+
+        for (const item of order.items) {
+          const menuItem = await this.getMenuItem(connection, item.menuId);
+          await this.query(connection, `INSERT INTO orderItem (orderId, menuId, description, price) VALUES (?, ?, ?, ?)`, [
+            orderId,
+            menuItem.id,
+            menuItem.description,
+            menuItem.price,
+          ]);
+          items.push({ menuId: menuItem.id, description: menuItem.description, price: menuItem.price });
+        }
+
+        await connection.commit();
+        return { ...order, items, id: orderId };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      }
     } finally {
       connection.end();
     }
+  }
+
+  async getMenuItem(connection, menuId) {
+    const rows = await this.query(connection, `SELECT id, description, price FROM menu WHERE id=? LIMIT 1`, [menuId]);
+    if (rows.length === 0) {
+      throw new StatusCodeError('unknown menu item', 404);
+    }
+
+    return rows[0];
   }
 
   async createFranchise(franchise) {
